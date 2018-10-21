@@ -26,23 +26,60 @@ import datetime
 
 # Class for storing filament properties
 class Filament:
-	def __init__(self, name, diameter, extrusion_factor, density, bed_temp, bed_layer0_temp, extruder_temp, extruder_layer0_temp, fan_speed, fan_layer0_speed):
+	# Filament constructor
+	#	Params:
+	#		name					Filament name
+	#		diameter				Filament diameter [mm]
+	# 		extrusion_factor		Extrusion factor [%]
+	# 		density					Filament density [g/mm^3]
+	# 		bed_temp				Print bed temperature [deg C]
+	# 		bed_layer0_temp			First layer bed temperature [deg C]
+	# 		hotend_temp				Print hotend temperature [deg c]
+	# 		hotend_layer0_temp		First layer hotend temperature [deg C]
+	# 		fan_speed				Print fan speed [%]
+	# 		fan_layer0_speed		First layer fan speed [%]
+	def __init__(self, name, diameter, extrusion_factor, density, bed_temp, bed_layer0_temp, hotend_temp, hotend_layer0_temp, fan_speed, fan_layer0_speed):
 		self.name = name
 		self.diameter = diameter
-		self.extrusion_factor = extrusion_factor
+		self.extrusion_factor = extrusion_factor / 100
 		self.density = density
 		self.bed_temp = bed_temp
 		self.bed_layer0_temp = bed_layer0_temp
-		self.extruder_temp = extruder_temp
-		self.extruder_layer0_temp = extruder_layer0_temp
+		self.hotend_temp = hotend_temp
+		self.hotend_layer0_temp = hotend_layer0_temp
 		self.fan_speed = fan_speed
 		self.fan_layer0_speed = fan_layer0_speed
 
+# Class for storing printer properties
 class Printer:
-	def __init__(self, name, delta, size_x, size_y, nozzle, retract_distance, retract_speed, retract_extra_restart, retract_lift, travel_speed, layer0_speed, fast_speed, slow_speed, layer_height, layer0_height, pa_min, pa_max):
+	# Printer constructor
+	#	Params:
+	#		name 					Printer name
+	# 		delta					Is this printer a delta configuration (put origo in center) [bool]
+	#		radius					Print volume radius (only applicable for delta printers) [mm]
+	# 		size_x					Print volume size in X-axis 8mm]
+	# 		size_y					Print volume size in Y-axis 8mm]
+	#		size_z					Print volume size in Z-axis 8mm]
+	# 		nozzle					Nozzle size [mm]
+	# 		retract_distance		Retraction distance [mm]
+	# 		retract_speed			Retraction speed [mm/s]
+	# 		retract_extra_restart	Retraction extra restart distance [mm]
+	# 		retract_lift			Retraction lift [mm]
+	# 		travel_speed			Travel speed [mm/s]		
+	# 		layer0_speed			First  layer print speed [mm/s] 
+	# 		fast_speed				Speed on fast part of calibration [mm/s]
+	# 		slow_speed				Speed on slow part of calibration [mm/s]
+	# 		layer_height			Print layer height [mm]
+	# 		layer0_height			First layer height [mm]
+	# 		pa_min					Start value for pressure advance alibration [s]
+	# 		pa_max					End value for pressure advance alibration [s]
+	def __init__(self, name, delta, radius, size_x, size_y, size_z, nozzle, retract_distance, retract_speed, retract_extra_restart, retract_lift, travel_speed, layer0_speed, fast_speed, slow_speed, layer_height, layer0_height, pa_min, pa_max):
 		self.name = name
+		self.delta = delta
+		self.radius = radius
 		self.size_x = size_x
 		self.size_y = size_y
+		self.size_z = size_z
 		self.nozzle = nozzle
 		self.retract_distance = retract_distance
 		self.retract_speed = retract_speed
@@ -194,16 +231,16 @@ class GCode:
 	def set_bed_temp_wait(self, temp):
 		self.print("M190 S%d" % temp)
 		
-	# Set extruder temperature
+	# Set hotend temperature
 	#	Params:
-	#		temp	Extruder temperature [deg C]
-	def set_extruder_temp(self, temp):
+	#		temp	Hotend temperature [deg C]
+	def set_hotend_temp(self, temp):
 		self.print("M104 S%d" % temp)
 
-	# Set extruder temperature and wait for it to be reached
+	# Set hotend temperature and wait for it to be reached
 	#	Params:
-	#		temp	Extruder temperature [deg C]
-	def set_extruder_temp_wait(self, temp):
+	#		temp	Hotend temperature [deg C]
+	def set_hotend_temp_wait(self, temp):
 		self.print("M109 S%d" % temp)
 	
 	# Set fan speed
@@ -263,8 +300,15 @@ class GCode:
 	#		comment		Comment string to  put in G-code
 	def comment(self, comment):
 		self.print("; " + comment)
-		
+
+# Class for generating calibration cylinders
 class CalibCylinder:
+	# Constructor for CalibCylinder
+	#	Params:
+	#		radius		Cylinder radius
+	#		segments	Number of straight line segments to split cylinder into
+	#		layers		Number of layers to print
+	#		brims		Number of brims to print on first layer
 	def __init__(self, radius, segments, layers, brims):
 		self.r = radius
 		self.segments = segments
@@ -272,14 +316,17 @@ class CalibCylinder:
 		self.brims = brims
 	
 	# Helper function to generate a range of angles given a number of circle segments
-	#	Params:
-	#		segments	Number of circle segments
 	def angles(self):
 		a = 0
 		while a < 2*pi:
 			yield a
 			a += 2*pi/self.segments
-			
+	
+	# Function to generate gcode for a calibration cylinder
+	#	Params:
+	#		filename	The file to write to
+	#		printer		Printer class to generate for
+	#		filament	Filament to generate for
 	def generate(self, filename, printer, filament):
 		gcode = GCode(filename, printer, filament)
 
@@ -287,25 +334,25 @@ class CalibCylinder:
 		y = printer.center_y
 
 		# Prefix
-		gcode.comment("Pressure advance calibration for RepRapFirmware")
+		gcode.comment("Pressure advance calibration cylinder for RepRapFirmware")
 		gcode.comment("generated by LHelge pa_cal_v2.py on %s" % datetime.datetime.now() )
 		gcode.comment("")
 		gcode.comment("For printer: %s (%.2f mm nozzle)" % (printer.name, printer.nozzle))
 		gcode.comment("With filament: %s (%.2f)" % (filament.name, filament.diameter))
-		gcode.comment("  First layer:      height=%.2f mm, bed temp=%d C, print temp=%d C, fan speed=%d%%" % (printer.layer0_height, filament.bed_layer0_temp, filament.extruder_layer0_temp, filament.fan_layer0_speed))
-		gcode.comment("  Following layers: height=%.2f mm, bed temp=%d C, print temp=%d C, fan speed=%d%%" % (printer.layer_height, filament.bed_temp, filament.extruder_temp, filament.fan_speed))
+		gcode.comment("  First layer:      height=%.2f mm, bed temp=%d C, print temp=%d C, fan speed=%d%%" % (printer.layer0_height, filament.bed_layer0_temp, filament.hotend_layer0_temp, filament.fan_layer0_speed))
+		gcode.comment("  Following layers: height=%.2f mm, bed temp=%d C, print temp=%d C, fan speed=%d%%" % (printer.layer_height, filament.bed_temp, filament.hotend_temp, filament.fan_speed))
 		gcode.comment("")
 		gcode.comment("Cylindrical object (r=%.1f mm, %d layers)" % (self.r, self.layers))
 		gcode.comment("  Layer 0 PA: %.3f" % printer.pa_min)
-		gcode.comment("  Layer 0 PA: %.3f" % printer.pa_max)
+		gcode.comment("  Layer %d PA: %.3f" % (self.layers, printer.pa_max))
 
 		# init
 		gcode.set_bed_temp_wait(filament.bed_layer0_temp)
-		gcode.set_extruder_temp(filament.extruder_layer0_temp)
+		gcode.set_hotend_temp(filament.hotend_layer0_temp)
 		gcode.init()
 		gcode.home(True, True, True)
 		gcode.move(x + self.r + self.brims*gcode.extrusion_width, y, 5, printer.travel_speed)
-		gcode.set_extruder_temp_wait(filament.extruder_layer0_temp)
+		gcode.set_hotend_temp_wait(filament.hotend_layer0_temp)
 		gcode.set_fan_speed(filament.fan_layer0_speed)
 		
 		#brim
@@ -322,7 +369,7 @@ class CalibCylinder:
 			gcode.extrude(x + self.r*cos(a), y + self.r*sin(a), printer.layer0_height, printer.layer0_speed, printer.layer0_height)
 
 		gcode.set_bed_temp(filament.bed_temp)
-		gcode.set_extruder_temp(filament.extruder_temp)
+		gcode.set_hotend_temp(filament.hotend_temp)
 		gcode.set_fan_speed(filament.fan_speed)
 		
 		#Spiral vase start
@@ -369,7 +416,7 @@ class CalibCylinder:
 		gcode.rel_move(0, 0, 5, printer.travel_speed)
 		gcode.home(True, False, False)
 		gcode.set_bed_temp(0)
-		gcode.set_extruder_temp(0)
+		gcode.set_hotend_temp(0)
 		gcode.set_fan_speed(0)
 		gcode.disable_motors()
 
@@ -377,15 +424,15 @@ class CalibCylinder:
 
 # Filament list
 filament_list = []
-# (Name, Diameter, Extrusion factor, Density, Bed temp, Layer0 bed temp, Extruder temp, Layer0 extruder temp, Fan speed, Layer0 fan speed)
-filament_list.append(Filament("PLA", 1.75, 1.0, 1.27, 60, 70, 205, 215, 100, 0))
-filament_list.append(Filament("PETG", 1.75, 0.97, 1.27, 90, 70, 260, 245, 50, 0))
+# (Name, Diameter, Extrusion factor, Density, Bed temp, Layer0 bed temp, Hotend temp, Layer0 hotend temp, Fan speed, Layer0 fan speed)
+filament_list.append(Filament("PLA", 1.75, 100, 1.27, 60, 70, 205, 215, 100, 0))
+filament_list.append(Filament("PETG", 1.75, 97, 1.27, 90, 70, 260, 245, 50, 0))
 
 # Printer list
 printer_list = []
 # (Name, Delta, Size X, Size Y, Nozzle, Retract distance, retract speed, Extra restart, Retract lift, Travel speed, Layer0 speed, Fast speed, Slow speed, Layer height, Layer0 height, PA min, PA max)
-printer_list.append(Printer("HEvo", False, 290, 290, 0.8, 1.0, 30, 0.2, 0.2, 200, 25, 70, 15, 0.4, 0.25, 0.0, 0.1))
-printer_list.append(Printer("P3Steel", False, 180, 180, 0.4, 0.8, 40, 0.1, 0.2, 150, 25, 70, 15, 0.2, 0.25, 0.0, 0.1))
+printer_list.append(Printer("HEvo", False, 0, 290, 290, 400, 0.8, 1.0, 30, 0.2, 0.2, 200, 25, 70, 15, 0.4, 0.25, 0.0, 0.1))
+printer_list.append(Printer("P3Steel", False, 0, 180, 180, 180, 0.4, 0.8, 40, 0.1, 0.2, 150, 25, 70, 15, 0.2, 0.25, 0.0, 0.1))
 
 
 
